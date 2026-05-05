@@ -137,35 +137,19 @@ class _StageWindowState extends State<StageWindow> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isPlaying = false;
   bool _isMuted = false;
+  bool _isLoadingAudio = false;
+  bool _needsUserInteraction = true;
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
   List<Lyric> _lyrics = [];
-
-  late final List<Widget> _slides;
 
   @override
   void initState() {
     super.initState();
     _loadLyrics();
     _setupAudio();
-    _slides = [
-      SlideTitle(
-        onNext: () => _step(1),
-        audioState: _audioState,
-        lyrics: _lyrics,
-        position: _position,
-      ),
-      const SlideBusinessNow(),
-      const IndustrySlide(),
-      const SlideHomeAutomation(),
-      const PolicyImperativeSlide(),
-      const AccuracySlide(),
-      const SecuritySlide(),
-      const SlideAccountability(),
-      const SlidePolicyDraft(),
-      const FinalSlide(),
-    ];
     _listenForSync();
+    
     final index = getStoredIndex();
     if (index != null) {
       _currentIndex = index;
@@ -173,45 +157,80 @@ class _StageWindowState extends State<StageWindow> {
         if (_pageController.hasClients) _pageController.jumpToPage(_currentIndex);
         _handleSlideChange(_currentIndex);
       });
-    } else {
-      _handleSlideChange(0);
     }
   }
 
   Future<void> _loadLyrics() async {
-    final lrcString = await rootBundle.loadString('assets/c5ac1b08-853c-4155-8b2d-d8db3292e721-lyrics-suno-lyric-downloader.lrc');
-    final lines = lrcString.split('\n');
-    final regExp = RegExp(r'\[(\d+):(\d+\.\d+)\](.*)');
-    
-    List<Lyric> parsed = [];
-    for (var line in lines) {
-      final match = regExp.firstMatch(line);
-      if (match != null) {
-        final minutes = int.parse(match.group(1)!);
-        final seconds = double.parse(match.group(2)!);
-        final text = match.group(3)!.trim();
-        if (text.isNotEmpty && !text.startsWith('[')) {
-          parsed.add(Lyric(
-            Duration(minutes: minutes, milliseconds: (seconds * 1000).toInt()),
-            text,
-          ));
+    try {
+      final lrcString = await rootBundle.loadString('assets/lyrics.lrc');
+      final lines = lrcString.split('\n');
+      final regExp = RegExp(r'\[(\d+):(\d+\.\d+)\](.*)');
+      
+      List<Lyric> parsed = [];
+      for (var line in lines) {
+        final match = regExp.firstMatch(line);
+        if (match != null) {
+          final minutes = int.parse(match.group(1)!);
+          final seconds = double.parse(match.group(2)!);
+          final text = match.group(3)!.trim();
+          if (text.isNotEmpty && !text.startsWith('[')) {
+            parsed.add(Lyric(
+              Duration(minutes: minutes, milliseconds: (seconds * 1000).toInt()),
+              text,
+            ));
+          }
         }
       }
+      setState(() => _lyrics = parsed);
+    } catch (e) {
+      developer.log("Error loading lyrics: $e");
     }
-    setState(() => _lyrics = parsed);
   }
 
   void _setupAudio() {
     _audioPlayer.onDurationChanged.listen((d) => setState(() => _duration = d));
     _audioPlayer.onPositionChanged.listen((p) => setState(() => _position = p));
     _audioPlayer.onPlayerStateChanged.listen((s) {
-      setState(() => _isPlaying = s == PlayerState.playing);
+      setState(() {
+        _isPlaying = s == PlayerState.playing;
+        if (s == PlayerState.playing) _needsUserInteraction = false;
+      });
     });
+  }
+
+  Future<void> _startAudio() async {
+    if (_isLoadingAudio) return;
+    
+    developer.log("Attempting to start audio...");
+    setState(() => _isLoadingAudio = true);
+    
+    try {
+      // Use explicit path for web deployment stability
+      await _audioPlayer.play(AssetSource('essex_rising.mp3'));
+      setState(() {
+        _needsUserInteraction = false;
+        _isLoadingAudio = false;
+      });
+      developer.log("Audio play request successful.");
+    } catch (e) {
+      setState(() => _isLoadingAudio = false);
+      developer.log("Audio play error: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Audio Error: $e. Try clicking again."),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
   }
 
   void _handleSlideChange(int index) {
     if (index == 0) {
-      _audioPlayer.play(AssetSource('Essex Rising.mp3'));
+      if (!_needsUserInteraction) {
+        _audioPlayer.resume();
+      }
     } else {
       _audioPlayer.pause();
     }
@@ -246,7 +265,13 @@ class _StageWindowState extends State<StageWindow> {
     isMuted: _isMuted,
     duration: _duration,
     position: _position,
-    onPlayPause: () => _isPlaying ? _audioPlayer.pause() : _audioPlayer.resume(),
+    onPlayPause: () {
+      if (_needsUserInteraction) {
+        _startAudio();
+      } else {
+        _isPlaying ? _audioPlayer.pause() : _audioPlayer.resume();
+      }
+    },
     onMute: () {
       _isMuted = !_isMuted;
       _audioPlayer.setVolume(_isMuted ? 0 : 1);
@@ -257,13 +282,37 @@ class _StageWindowState extends State<StageWindow> {
 
   @override
   Widget build(BuildContext context) {
+    final List<Widget> slides = [
+      SlideTitle(
+        onNext: () => _step(1),
+        audioState: _audioState,
+        lyrics: _lyrics,
+        position: _position,
+        needsInteraction: _needsUserInteraction,
+        isLoading: _isLoadingAudio,
+        onStart: _startAudio,
+      ),
+      const SlideBusinessNow(),
+      const IndustrySlide(),
+      const SlideHomeAutomation(),
+      const PolicyImperativeSlide(),
+      const AccuracySlide(),
+      const SecuritySlide(),
+      const SlideAccountability(),
+      const SlidePolicyDraft(),
+      const FinalSlide(),
+    ];
+
     return Scaffold(
       backgroundColor: kDeepSlate,
       body: MouseRegion(
         onHover: (_) => setState(() => _showControls = true),
         onExit: (_) => setState(() => _showControls = false),
         child: GestureDetector(
-          onTap: () => FocusScope.of(context).requestFocus(FocusNode()),
+          onTap: () {
+            if (_needsUserInteraction && _currentIndex == 0) _startAudio();
+            FocusScope.of(context).requestFocus(FocusNode());
+          },
           child: CallbackShortcuts(
             bindings: {
               const SingleActivator(LogicalKeyboardKey.arrowRight): () => _step(1),
@@ -279,13 +328,12 @@ class _StageWindowState extends State<StageWindow> {
                   PageView.builder(
                     controller: _pageController,
                     physics: const NeverScrollableScrollPhysics(),
-                    itemCount: _slides.length,
+                    itemCount: slides.length,
                     itemBuilder: (context, index) {
+                      final slide = slides[index];
                       return AnimatedSlideWrapper(
                         isActive: _currentIndex == index,
-                        child: index == 0 
-                          ? SlideTitle(onNext: () => _step(1), audioState: _audioState, lyrics: _lyrics, position: _position)
-                          : _slides[index],
+                        child: slide,
                       );
                     },
                   ),
@@ -332,10 +380,10 @@ class _StageWindowState extends State<StageWindow> {
                                 border: Border.all(color: kFuchsiaAccent.withValues(alpha: 0.5)),
                                 borderRadius: BorderRadius.circular(30),
                               ),
-                              child: Text('${_currentIndex + 1} / ${_slides.length}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                              child: Text('${_currentIndex + 1} / ${slides.length}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                             ),
                             const SizedBox(width: 20),
-                            _navButton(Icons.arrow_forward_ios, () => _step(1), enabled: _currentIndex < _slides.length - 1),
+                            _navButton(Icons.arrow_forward_ios, () => _step(1), enabled: _currentIndex < slides.length - 1),
                           ],
                         ),
                       ),
@@ -360,7 +408,7 @@ class _StageWindowState extends State<StageWindow> {
 
   void _step(int delta) {
     final newIndex = _currentIndex + delta;
-    if (newIndex >= 0 && newIndex < _slides.length) {
+    if (newIndex >= 0 && newIndex < 10) { 
       _updateInternalPage(newIndex);
       broadcastSlide(newIndex);
     }
@@ -498,7 +546,7 @@ class _PresenterWindowState extends State<PresenterWindow> {
                         ),
                       ),
                       const SizedBox(height: 40),
-                      Text('COMING UP:', style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontWeight: FontWeight.bold)),
+                      Text('COMING UP:', style: TextStyle(color: Colors.white.withValues(alpha: 0.1), fontWeight: FontWeight.bold)),
                       Text(_currentIndex < _totalSlides - 1 ? 'Slide ${_currentIndex + 2}' : 'Wrap Up', style: const TextStyle(color: Colors.white38, fontSize: 20)),
                     ],
                   ),
@@ -632,6 +680,9 @@ class SlideTitle extends StatelessWidget {
   final AudioControlState audioState;
   final List<Lyric> lyrics;
   final Duration position;
+  final bool needsInteraction;
+  final bool isLoading;
+  final VoidCallback onStart;
 
   const SlideTitle({
     super.key,
@@ -639,6 +690,9 @@ class SlideTitle extends StatelessWidget {
     required this.audioState,
     required this.lyrics,
     required this.position,
+    required this.needsInteraction,
+    required this.isLoading,
+    required this.onStart,
   });
 
   @override
@@ -715,50 +769,69 @@ class SlideTitle extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 80),
-              GestureDetector(onTap: onNext, child: const MouseRegion(cursor: SystemMouseCursors.click, child: AnimatedPulseIcon())),
+              if (needsInteraction)
+                SizedBox(
+                  width: 300,
+                  height: 80,
+                  child: ElevatedButton.icon(
+                    onPressed: isLoading ? null : onStart,
+                    icon: isLoading 
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : const Icon(Icons.play_arrow, size: 32),
+                    label: Text(isLoading ? "LOADING..." : "START EXPERIENCE", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: kFuchsia,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(100)),
+                    ),
+                  ),
+                )
+              else
+                GestureDetector(onTap: onNext, child: const MouseRegion(cursor: SystemMouseCursors.click, child: AnimatedPulseIcon())),
             ],
           ),
         ),
 
         // Audio Controls Overlay
-        Positioned(
-          bottom: 40,
-          left: 40,
-          right: 40,
-          child: Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.5),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.white10),
-            ),
-            child: Row(
-              children: [
-                IconButton(
-                  icon: Icon(audioState.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled, size: 40, color: kFuchsiaAccent),
-                  onPressed: audioState.onPlayPause,
-                ),
-                IconButton(
-                  icon: Icon(audioState.isMuted ? Icons.volume_off : Icons.volume_up, color: Colors.white70),
-                  onPressed: audioState.onMute,
-                ),
-                Expanded(
-                  child: Slider(
-                    value: audioState.position.inMilliseconds.toDouble(),
-                    max: audioState.duration.inMilliseconds.toDouble() > 0 ? audioState.duration.inMilliseconds.toDouble() : 1.0,
-                    onChanged: audioState.onSeek,
-                    activeColor: kFuchsia,
-                    inactiveColor: Colors.white10,
+        if (!needsInteraction)
+          Positioned(
+            bottom: 40,
+            left: 40,
+            right: 40,
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white10),
+              ),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: Icon(audioState.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled, size: 40, color: kFuchsiaAccent),
+                    onPressed: audioState.onPlayPause,
                   ),
-                ),
-                Text(
-                  _formatDuration(audioState.position),
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
-                ),
-              ],
+                  IconButton(
+                    icon: Icon(audioState.isMuted ? Icons.volume_off : Icons.volume_up, color: Colors.white70),
+                    onPressed: audioState.onMute,
+                  ),
+                  Expanded(
+                    child: Slider(
+                      value: audioState.position.inMilliseconds.toDouble(),
+                      max: audioState.duration.inMilliseconds.toDouble() > 0 ? audioState.duration.inMilliseconds.toDouble() : 1.0,
+                      onChanged: audioState.onSeek,
+                      activeColor: kFuchsia,
+                      inactiveColor: Colors.white10,
+                    ),
+                  ),
+                  Text(
+                    _formatDuration(audioState.position),
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
       ],
     );
   }
@@ -1043,37 +1116,45 @@ class SlidePolicyDraft extends StatelessWidget {
   const SlidePolicyDraft({super.key});
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 80),
-      child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('🛡️ THE BLUEPRINT', style: GoogleFonts.spaceGrotesk(color: kFuchsia, fontWeight: FontWeight.w900, letterSpacing: 2)),
-        Text('Essential Policy Components', style: GoogleFonts.spaceGrotesk(fontSize: 60, fontWeight: FontWeight.w900)),
-        const SizedBox(height: 40),
-        Expanded(
-          child: ListView(
-            physics: const NeverScrollableScrollPhysics(),
-            children: [
-              _policyRow('1. Approved Tool List', 'Explicitly state which tools are allowed for business data.'),
-              _policyRow('2. Data Prohibition', 'Strictly ban uploading client PII to public/free chatbots.'),
-              _policyRow('3. Verification Workflow', 'Mandatory double-check of all AI-generated facts/advice.'),
-              _policyRow('4. Client Disclosure', 'Standard wording for how/when clients are told AI was used.'),
-              _policyRow('5. Accountability Lead', 'Identify who in the firm is responsible for AI oversight.'),
-            ],
-          ),
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 80),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('🛡️ THE BLUEPRINT', style: GoogleFonts.spaceGrotesk(color: kFuchsia, fontWeight: FontWeight.w900, letterSpacing: 2)),
+            Text('Essential Policy Components', style: GoogleFonts.spaceGrotesk(fontSize: 60, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 40),
+            _policyRow('1. Approved Tool List', 'Explicitly state which tools are allowed for business data.'),
+            _policyRow('2. Data Prohibition', 'Strictly ban uploading client PII to public/free chatbots.'),
+            _policyRow('3. Verification Workflow', 'Mandatory double-check of all AI-generated facts/advice.'),
+            _policyRow('4. Client Disclosure', 'Standard wording for how/when clients are told AI was used.'),
+            _policyRow('5. Accountability Lead', 'Identify who in the firm is responsible for AI oversight.'),
+          ],
         ),
-      ]),
+      ),
     );
   }
   Widget _policyRow(String title, String desc) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Row(children: [
-        const Icon(Icons.description, color: kFuchsiaAccent, size: 24),
-        const SizedBox(width: 20),
-        Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Colors.white)),
-        const SizedBox(width: 20),
-        Expanded(child: Text(desc, style: const TextStyle(color: Colors.white60, fontSize: 18))),
-      ]),
+      padding: const EdgeInsets.symmetric(vertical: 15),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const Icon(Icons.description, color: kFuchsiaAccent, size: 32),
+          const SizedBox(width: 24),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 24, color: Colors.white)),
+                Text(desc, style: const TextStyle(color: Colors.white60, fontSize: 18)),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
