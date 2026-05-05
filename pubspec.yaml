@@ -7,6 +7,7 @@ environment:
   sdk: ^3.10.4
 
 dependencies:
+  audioplayers: ^6.6.0
   flutter:
     sdk: flutter
   google_fonts: ^8.1.0
@@ -20,3 +21,7 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/essex_rising.mp3
+    - assets/lyrics.lrc
+
