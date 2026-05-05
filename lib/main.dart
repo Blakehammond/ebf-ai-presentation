@@ -51,31 +51,23 @@ class _PresentationRouterState extends State<PresentationRouter> {
   void initState() {
     super.initState();
     _checkMode();
+    // Live listener so adding "#presenter" to the URL works instantly
+    web.window.addEventListener('hashchange', (web.Event event) {
+      _checkMode();
+    }.toJS);
   }
 
   void _checkMode() {
-    // Check both Hash and Query parameters for "presenter"
-    final uri = Uri.base;
-    if (uri.fragment.contains('presenter') || 
-        uri.queryParameters['mode'] == 'presenter' ||
-        web.window.location.hash.contains('presenter')) {
-      setState(() => _isPresenter = true);
+    final hash = web.window.location.hash;
+    final isNowPresenter = hash.contains('presenter');
+    if (isNowPresenter != _isPresenter) {
+      setState(() => _isPresenter = isNowPresenter);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return CallbackShortcuts(
-      bindings: {
-        const SingleActivator(LogicalKeyboardKey.keyP, alt: true): () {
-          setState(() => _isPresenter = !_isPresenter);
-        },
-      },
-      child: Focus(
-        autofocus: true,
-        child: _isPresenter ? const PresenterWindow() : const StageWindow(),
-      ),
-    );
+    return _isPresenter ? const PresenterWindow() : const StageWindow();
   }
 }
 
