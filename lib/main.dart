@@ -50,14 +50,32 @@ class _PresentationRouterState extends State<PresentationRouter> {
   @override
   void initState() {
     super.initState();
-    if (web.window.location.hash.contains('presenter')) {
-      _isPresenter = true;
+    _checkMode();
+  }
+
+  void _checkMode() {
+    // Check both Hash and Query parameters for "presenter"
+    final uri = Uri.base;
+    if (uri.fragment.contains('presenter') || 
+        uri.queryParameters['mode'] == 'presenter' ||
+        web.window.location.hash.contains('presenter')) {
+      setState(() => _isPresenter = true);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return _isPresenter ? const PresenterWindow() : const StageWindow();
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyP, alt: true): () {
+          setState(() => _isPresenter = !_isPresenter);
+        },
+      },
+      child: Focus(
+        autofocus: true,
+        child: _isPresenter ? const PresenterWindow() : const StageWindow(),
+      ),
+    );
   }
 }
 
@@ -1286,12 +1304,19 @@ class _AnimatedPulseIconState extends State<AnimatedPulseIcon>
 // --- SCRIPTS ---
 
 final List<String> _presenterScripts = [
-  "Alright EBF! Wake up! Let's talk AI—the biggest power-up for Essex businesses. My goal? Get more done, worry less, and actually enjoy your work week. Let's go!",
-  "First, the hard facts. 35% of UK SMEs are already all-in. Early adopters are seeing a 31% productivity jump and 23% lower costs. This isn't theoretical; it's happening right now in Essex.",
-  "Look at the wins: Solicitors auditing 100-page leases in 5 seconds. Builders using AI photo-quoting to send bids before they even leave the site. This is about buying your time back from the admin gods.",
-  "It's not just the office. At home, tools like Home Assistant are bringing local-first AI to your living room. Imagine 'Presence Awareness'—where your house knows exactly where you are. But even bigger: 'High Impact Safety'. If a pipe bursts at 2 AM, AI detects the pressure drop and shuts off your water valve automatically. If there's smoke, your house lights up a safe exit path and unlocks the doors. This is AI protecting what matters most.",
-  "The Serious Bit: The Rulebook. We need a policy to protect our local EBF reputation. Truth, Lockdown, and Accountability. Don't let a bot ruin your brand.",
-  "Pillar 1: Kill the Hallucinations. Use RAG to connect AI to your actual files. And remember: AI is the intern, you are the boss. Human sign-off is mandatory.",
-  "Pillar 2: Data Lockdown. If you put client PII into a public bot, you've leaked it. Use Enterprise tools. Under GDPR, you are the controller. Transparency is key.",
-  "Final word: Lead the way! Essex is a powerhouse, and with AI, we're unstoppable. No non-existent URLs—just a big 'Let's Chat'. Who's ready? Questions?"
+  "Good morning everyone. It’s great to be with the Essex Business Forum today. We’re going to look past the hype and headlines to focus on the 'AI Advantage'. This isn’t about science fiction; it’s about practical tools that can help us get more done, reduce our daily admin stress, and allow us to focus on the parts of our business we actually enjoy. Over the next 10 minutes, I’ll share real-world wins and the essential safeguards you need to protect your reputation.",
+  
+  "Before we dive into the tools, let’s look at the data. As of 2025, 35% of UK SMEs have fully integrated AI into their operations, and that adoption is accelerating. This isn't just for big tech firms; local businesses are seeing a 31% jump in productivity and a 23% reduction in operational costs. However, the 'Skills Gap' remains the biggest hurdle for 67% of leaders. Today, we’re going to help bridge that gap by looking at simple, high-impact implementation.",
+  
+  "Let's look at how this applies to our members. For Solicitors, AI like CoCounsel can audit massive leases in seconds. For our Trades, imagine a client sending a photo of a job and AI drafting an initial quote before you even get in your van. Creative agencies use 'Generative Ideation' to skip the blank-page syndrome. These are 'Quick Wins' that buy your time back from the admin gods. Feel free to hover over the cards here to see the specific software and prompts I recommend.",
+  
+  "It’s not just the office where AI is making an impact. In our personal lives, 'The Personal Edge' is about safety and efficiency. Tools like Home Assistant allow for 'Local-First' AI—meaning your data stays in your house, not the cloud. We’re seeing 'Presence Awareness' that adjusts lighting as you move, and high-impact safety like AI leak detection that can shut your water main off in seconds if it detects a burst pipe at 2 AM. It's about AI acting as a guardian for your home.",
+  
+  "Now, for the most critical section: The Rulebook. In the EBF, we value our local reputations. You cannot just 'set and forget' AI. A proper policy is built on three pillars: Truth (Accuracy), Lockdown (Security), and You (Accountability). This policy is your shield against the risks of unmanaged automation, ensuring that every tool you use adds value without creating a liability.",
+  
+  "The biggest fear with AI is 'Hallucinations'—when a bot makes up a fact with total confidence. The solution is RAG, or 'Retrieval-Augmented Generation'. Instead of asking an AI to use its general training memory, we connect it specifically to *your* PDFs and databases. It only answers using the facts you provide. But even with RAG, we keep a 'Human in the Loop'. AI is your intern—it does the heavy lifting, but an expert must always give the final sign-off.",
+  
+  "Pillar 2 is Data Lockdown. Under UK GDPR, you are the data controller. If you enter sensitive client information into a public, free version of ChatGPT, you have essentially leaked that data. Your policy must mandate the use of 'Enterprise APIs' where data is explicitly not used for training. Be transparent with your clients—tell them you use AI to improve their service, and show them the security measures you have in place to keep their data private.",
+  
+  "AI is the ultimate force multiplier for Essex business. My advice? Don't try to change everything at once. Pick one 'Quick Win', draft your policy, and stay curious. The EBF has always been about leading the way, and with these tools, we're in a position to stay ahead of the curve. Thank you for your time today—I'd love to hear your thoughts and answer any questions you might have. Let's talk AI!"
 ];
