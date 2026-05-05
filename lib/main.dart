@@ -4,6 +4,7 @@ import 'package:web/web.dart' as web;
 import 'dart:js_interop';
 import 'package:flutter/services.dart';
 import 'dart:math' as math;
+import 'dart:convert';
 
 void main() {
   runApp(const EBFAIPresentation());
@@ -14,7 +15,6 @@ const Color kFuchsia = Color(0xFFD946EF);
 const Color kFuchsiaAccent = Color(0xFFF0ABFC);
 const Color kCyanAccent = Color(0xFF22D3EE);
 const Color kDeepSlate = Color(0xFF0F172A);
-const Color kGlassBorder = Color(0x33FFFFFF);
 
 class EBFAIPresentation extends StatelessWidget {
   const EBFAIPresentation({super.key});
@@ -51,7 +51,6 @@ class _PresentationRouterState extends State<PresentationRouter> {
   void initState() {
     super.initState();
     _checkMode();
-    // Aggressive listener for URL changes
     web.window.addEventListener('hashchange', (web.Event event) {
       _checkMode();
     }.toJS);
@@ -59,7 +58,6 @@ class _PresentationRouterState extends State<PresentationRouter> {
 
   void _checkMode() {
     final url = web.window.location.href.toLowerCase();
-    // Check for "presenter" anywhere in the URL (hash or query)
     final isNowPresenter = url.contains('presenter');
     if (isNowPresenter != _isPresenter) {
       setState(() => _isPresenter = isNowPresenter);
@@ -74,7 +72,6 @@ class _PresentationRouterState extends State<PresentationRouter> {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        // Main App
         _isPresenter 
             ? PresenterWindow(onExit: _toggleMode) 
             : StageWindow(onTogglePresenter: _toggleMode),
@@ -98,7 +95,30 @@ class _PresentationRouterState extends State<PresentationRouter> {
   }
 }
 
-const String kSyncKey = 'ebf_slide_index';
+const String kSyncKey = 'ebf_presentation_sync';
+
+// --- SYNC HELPERS ---
+
+void broadcastSlide(int index) {
+  final data = {
+    'index': index,
+    'timestamp': DateTime.now().millisecondsSinceEpoch,
+  };
+  web.window.localStorage.setItem(kSyncKey, jsonEncode(data));
+}
+
+int? getStoredIndex() {
+  final stored = web.window.localStorage.getItem(kSyncKey);
+  if (stored != null) {
+    try {
+      final data = jsonDecode(stored) as Map<String, dynamic>;
+      return data['index'] as int;
+    } catch (_) {
+      return null;
+    }
+  }
+  return null;
+}
 
 // --- STAGE WINDOW ---
 
@@ -131,13 +151,11 @@ class _StageWindowState extends State<StageWindow> {
   void initState() {
     super.initState();
     _listenForSync();
-    final stored = web.window.localStorage.getItem(kSyncKey);
-    if (stored != null) {
-      _currentIndex = int.tryParse(stored) ?? 0;
+    final index = getStoredIndex();
+    if (index != null) {
+      _currentIndex = index;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_pageController.hasClients) {
-          _pageController.jumpToPage(_currentIndex);
-        }
+        if (_pageController.hasClients) _pageController.jumpToPage(_currentIndex);
       });
     }
   }
@@ -146,8 +164,8 @@ class _StageWindowState extends State<StageWindow> {
     web.window.addEventListener('storage', (web.Event event) {
       final storageEvent = event as web.StorageEvent;
       if (storageEvent.key == kSyncKey && storageEvent.newValue != null) {
-        final index = int.tryParse(storageEvent.newValue!) ?? 0;
-        if (index != _currentIndex) {
+        final index = getStoredIndex();
+        if (index != null && index != _currentIndex) {
           if (_pageController.hasClients) {
             _pageController.animateToPage(
               index,
@@ -200,7 +218,7 @@ class _StageWindowState extends State<StageWindow> {
                     },
                   ),
                   
-                  // Brand Header (Secret Toggle via Triple Click)
+                  // Brand Header
                   Positioned(
                     top: 25,
                     left: 40,
@@ -233,7 +251,7 @@ class _StageWindowState extends State<StageWindow> {
                     ),
                   ),
 
-                  // Floating Navigation Controls
+                  // Floating Navigation
                   AnimatedOpacity(
                     opacity: _showControls ? 1.0 : 0.0,
                     duration: const Duration(milliseconds: 300),
@@ -296,7 +314,7 @@ class _StageWindowState extends State<StageWindow> {
         );
       }
       setState(() => _currentIndex = newIndex);
-      web.window.localStorage.setItem(kSyncKey, newIndex.toString());
+      broadcastSlide(newIndex);
     }
   }
 }
@@ -314,20 +332,40 @@ class PresenterWindow extends StatefulWidget {
 class _PresenterWindowState extends State<PresenterWindow> {
   int _currentIndex = 0;
   final int _totalSlides = 8;
+  bool _isSynced = true;
 
   @override
   void initState() {
     super.initState();
-    final stored = web.window.localStorage.getItem(kSyncKey);
-    if (stored != null) {
-      _currentIndex = int.tryParse(stored) ?? 0;
-    }
+    _listenForSync();
+    final index = getStoredIndex();
+    if (index != null) _currentIndex = index;
+  }
+
+  void _listenForSync() {
+    web.window.addEventListener('storage', (web.Event event) {
+      final storageEvent = event as web.StorageEvent;
+      if (storageEvent.key == kSyncKey && storageEvent.newValue != null) {
+        final index = getStoredIndex();
+        if (index != null && index != _currentIndex) {
+          setState(() {
+            _currentIndex = index;
+            _isSynced = true;
+          });
+        }
+      }
+    }.toJS);
   }
 
   void _goTo(int index) {
     if (index < 0 || index >= _totalSlides) return;
-    setState(() => _currentIndex = index);
-    web.window.localStorage.setItem(kSyncKey, index.toString());
+    setState(() {
+      _currentIndex = index;
+      _isSynced = false;
+    });
+    broadcastSlide(index);
+    // Visual feedback for sync
+    Future.delayed(const Duration(milliseconds: 200), () => setState(() => _isSynced = true));
   }
 
   @override
@@ -362,6 +400,15 @@ class _PresenterWindowState extends State<PresenterWindow> {
                                 fontWeight: FontWeight.w900)),
                         const Spacer(),
                         IconButton(onPressed: widget.onExit, icon: const Icon(Icons.close, color: Colors.white38)),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        Icon(Icons.circle, size: 12, color: _isSynced ? Colors.greenAccent : Colors.orangeAccent),
+                        const SizedBox(width: 8),
+                        Text(_isSynced ? 'Projector Synced' : 'Syncing...', 
+                             style: TextStyle(color: _isSynced ? Colors.greenAccent : Colors.orangeAccent, fontSize: 12)),
                       ],
                     ),
                     const Spacer(),
