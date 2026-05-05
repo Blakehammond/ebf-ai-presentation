@@ -137,38 +137,19 @@ class _StageWindowState extends State<StageWindow> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isPlaying = false;
   bool _isMuted = false;
+  bool _isLoadingAudio = false;
   bool _needsUserInteraction = true;
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
   List<Lyric> _lyrics = [];
-
-  late final List<Widget> _slides;
 
   @override
   void initState() {
     super.initState();
     _loadLyrics();
     _setupAudio();
-    _slides = [
-      SlideTitle(
-        onNext: () => _step(1),
-        audioState: _audioState,
-        lyrics: _lyrics,
-        position: _position,
-        needsInteraction: true, // Will be updated by state
-        onStart: _startAudio,
-      ),
-      const SlideBusinessNow(),
-      const IndustrySlide(),
-      const SlideHomeAutomation(),
-      const PolicyImperativeSlide(),
-      const AccuracySlide(),
-      const SecuritySlide(),
-      const SlideAccountability(),
-      const SlidePolicyDraft(),
-      const FinalSlide(),
-    ];
     _listenForSync();
+    
     final index = getStoredIndex();
     if (index != null) {
       _currentIndex = index;
@@ -176,8 +157,6 @@ class _StageWindowState extends State<StageWindow> {
         if (_pageController.hasClients) _pageController.jumpToPage(_currentIndex);
         _handleSlideChange(_currentIndex);
       });
-    } else {
-      _handleSlideChange(0);
     }
   }
 
@@ -212,19 +191,42 @@ class _StageWindowState extends State<StageWindow> {
     _audioPlayer.onDurationChanged.listen((d) => setState(() => _duration = d));
     _audioPlayer.onPositionChanged.listen((p) => setState(() => _position = p));
     _audioPlayer.onPlayerStateChanged.listen((s) {
-      setState(() => _isPlaying = s == PlayerState.playing);
+      setState(() {
+        _isPlaying = s == PlayerState.playing;
+        if (s == PlayerState.playing) _needsUserInteraction = false;
+      });
+    });
+    
+    // Set source early
+    _audioPlayer.setSource(AssetSource('essex_rising.mp3')).catchError((e) {
+      developer.log("Source set error: $e");
     });
   }
 
   Future<void> _startAudio() async {
-    developer.log("Starting audio context...");
+    if (_isLoadingAudio) return;
+    
+    developer.log("Attempting to start audio...");
+    setState(() => _isLoadingAudio = true);
+    
     try {
-      // For web, sometimes we need to use AssetSource with the full path if hosted
       await _audioPlayer.play(AssetSource('essex_rising.mp3'));
-      setState(() => _needsUserInteraction = false);
-      developer.log("Audio playing successfully.");
+      setState(() {
+        _needsUserInteraction = false;
+        _isLoadingAudio = false;
+      });
+      developer.log("Audio play request successful.");
     } catch (e) {
-      developer.log("Autoplay blocked or error: $e");
+      setState(() => _isLoadingAudio = false);
+      developer.log("Audio play error: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Audio Error: $e. Try clicking again."),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
     }
   }
 
@@ -284,6 +286,27 @@ class _StageWindowState extends State<StageWindow> {
 
   @override
   Widget build(BuildContext context) {
+    final List<Widget> slides = [
+      SlideTitle(
+        onNext: () => _step(1),
+        audioState: _audioState,
+        lyrics: _lyrics,
+        position: _position,
+        needsInteraction: _needsUserInteraction,
+        isLoading: _isLoadingAudio,
+        onStart: _startAudio,
+      ),
+      const SlideBusinessNow(),
+      const IndustrySlide(),
+      const SlideHomeAutomation(),
+      const PolicyImperativeSlide(),
+      const AccuracySlide(),
+      const SecuritySlide(),
+      const SlideAccountability(),
+      const SlidePolicyDraft(),
+      const FinalSlide(),
+    ];
+
     return Scaffold(
       backgroundColor: kDeepSlate,
       body: MouseRegion(
@@ -309,13 +332,11 @@ class _StageWindowState extends State<StageWindow> {
                   PageView.builder(
                     controller: _pageController,
                     physics: const NeverScrollableScrollPhysics(),
-                    itemCount: _slides.length,
+                    itemCount: slides.length,
                     itemBuilder: (context, index) {
-                      final slide = _slides[index];
-                      // Inject audio state into SlideTitle
                       final widget = (index == 0) 
-                        ? SlideTitle(onNext: () => _step(1), audioState: _audioState, lyrics: _lyrics, position: _position, needsInteraction: _needsUserInteraction, onStart: _startAudio)
-                        : slide;
+                        ? SlideTitle(onNext: () => _step(1), audioState: _audioState, lyrics: _lyrics, position: _position, needsInteraction: _needsUserInteraction, isLoading: _isLoadingAudio, onStart: _startAudio)
+                        : slides[index];
                         
                       return AnimatedSlideWrapper(
                         isActive: _currentIndex == index,
@@ -366,10 +387,10 @@ class _StageWindowState extends State<StageWindow> {
                                 border: Border.all(color: kFuchsiaAccent.withValues(alpha: 0.5)),
                                 borderRadius: BorderRadius.circular(30),
                               ),
-                              child: Text('${_currentIndex + 1} / ${_slides.length}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                              child: Text('${_currentIndex + 1} / ${slides.length}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                             ),
                             const SizedBox(width: 20),
-                            _navButton(Icons.arrow_forward_ios, () => _step(1), enabled: _currentIndex < _slides.length - 1),
+                            _navButton(Icons.arrow_forward_ios, () => _step(1), enabled: _currentIndex < slides.length - 1),
                           ],
                         ),
                       ),
@@ -394,7 +415,7 @@ class _StageWindowState extends State<StageWindow> {
 
   void _step(int delta) {
     final newIndex = _currentIndex + delta;
-    if (newIndex >= 0 && newIndex < _slides.length) {
+    if (newIndex >= 0 && newIndex < 10) { 
       _updateInternalPage(newIndex);
       broadcastSlide(newIndex);
     }
@@ -532,7 +553,7 @@ class _PresenterWindowState extends State<PresenterWindow> {
                         ),
                       ),
                       const SizedBox(height: 40),
-                      Text('COMING UP:', style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontWeight: FontWeight.bold)),
+                      Text('COMING UP:', style: TextStyle(color: Colors.white10, fontWeight: FontWeight.bold)),
                       Text(_currentIndex < _totalSlides - 1 ? 'Slide ${_currentIndex + 2}' : 'Wrap Up', style: const TextStyle(color: Colors.white38, fontSize: 20)),
                     ],
                   ),
@@ -667,6 +688,7 @@ class SlideTitle extends StatelessWidget {
   final List<Lyric> lyrics;
   final Duration position;
   final bool needsInteraction;
+  final bool isLoading;
   final VoidCallback onStart;
 
   const SlideTitle({
@@ -676,6 +698,7 @@ class SlideTitle extends StatelessWidget {
     required this.lyrics,
     required this.position,
     required this.needsInteraction,
+    required this.isLoading,
     required this.onStart,
   });
 
@@ -754,15 +777,20 @@ class SlideTitle extends StatelessWidget {
               ),
               const SizedBox(height: 80),
               if (needsInteraction)
-                ElevatedButton.icon(
-                  onPressed: onStart,
-                  icon: const Icon(Icons.play_arrow),
-                  label: const Text("START EXPERIENCE"),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: kFuchsia,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
-                    textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                SizedBox(
+                  width: 300,
+                  height: 80,
+                  child: ElevatedButton.icon(
+                    onPressed: isLoading ? null : onStart,
+                    icon: isLoading 
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : const Icon(Icons.play_arrow, size: 32),
+                    label: Text(isLoading ? "LOADING..." : "START EXPERIENCE", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: kFuchsia,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(100)),
+                    ),
                   ),
                 )
               else
