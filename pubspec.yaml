@@ -22,6 +22,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/Essex Rising.mp3
-    - assets/c5ac1b08-853c-4155-8b2d-d8db3292e721-lyrics-suno-lyric-downloader.lrc
+    - assets/essex_rising.mp3
+    - assets/lyrics.lrc
+
 
