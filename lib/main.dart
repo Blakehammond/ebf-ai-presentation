@@ -249,7 +249,7 @@ class _StageWindowState extends State<StageWindow> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                               decoration: BoxDecoration(
-                                color: Colors.fuchsia.withValues(alpha: 0.2),
+                                color: kFuchsia.withValues(alpha: 0.2),
                                 border: Border.all(color: kFuchsiaAccent.withValues(alpha: 0.5)),
                                 borderRadius: BorderRadius.circular(30),
                               ),
