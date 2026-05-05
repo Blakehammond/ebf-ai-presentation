@@ -5,6 +5,7 @@ import 'dart:js_interop';
 import 'package:flutter/services.dart';
 import 'dart:math' as math;
 import 'dart:convert';
+import 'dart:developer' as developer;
 
 void main() {
   runApp(const EBFAIPresentation());
@@ -51,6 +52,7 @@ class _PresentationRouterState extends State<PresentationRouter> {
   void initState() {
     super.initState();
     _checkMode();
+    // Listen for manual hash changes (e.g. user typing #presenter)
     web.window.addEventListener('hashchange', (web.Event event) {
       _checkMode();
     }.toJS);
@@ -95,29 +97,16 @@ class _PresentationRouterState extends State<PresentationRouter> {
   }
 }
 
-const String kSyncKey = 'ebf_presentation_sync';
-
-// --- SYNC HELPERS ---
+// --- BROADCAST CHANNEL SYNC ---
+const String kChannelName = 'ebf_ai_channel';
+final web.BroadcastChannel _syncChannel = web.BroadcastChannel(kChannelName);
 
 void broadcastSlide(int index) {
-  final data = {
-    'index': index,
-    'timestamp': DateTime.now().millisecondsSinceEpoch,
-  };
-  web.window.localStorage.setItem(kSyncKey, jsonEncode(data));
-}
-
-int? getStoredIndex() {
-  final stored = web.window.localStorage.getItem(kSyncKey);
-  if (stored != null) {
-    try {
-      final data = jsonDecode(stored) as Map<String, dynamic>;
-      return data['index'] as int;
-    } catch (_) {
-      return null;
-    }
-  }
-  return null;
+  final message = {'type': 'slide_change', 'index': index}.jsify();
+  _syncChannel.postMessage(message);
+  // Fallback to localStorage for initial load persistence
+  web.window.localStorage.setItem('last_index', index.toString());
+  developer.log('Broadcasting slide $index');
 }
 
 // --- STAGE WINDOW ---
@@ -151,9 +140,11 @@ class _StageWindowState extends State<StageWindow> {
   void initState() {
     super.initState();
     _listenForSync();
-    final index = getStoredIndex();
-    if (index != null) {
-      _currentIndex = index;
+    
+    // Resume from localStorage if available
+    final stored = web.window.localStorage.getItem('last_index');
+    if (stored != null) {
+      _currentIndex = int.tryParse(stored) ?? 0;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_pageController.hasClients) _pageController.jumpToPage(_currentIndex);
       });
@@ -161,22 +152,26 @@ class _StageWindowState extends State<StageWindow> {
   }
 
   void _listenForSync() {
-    web.window.addEventListener('storage', (web.Event event) {
-      final storageEvent = event as web.StorageEvent;
-      if (storageEvent.key == kSyncKey && storageEvent.newValue != null) {
-        final index = getStoredIndex();
-        if (index != null && index != _currentIndex) {
-          if (_pageController.hasClients) {
-            _pageController.animateToPage(
-              index,
-              duration: const Duration(milliseconds: 1000),
-              curve: Curves.elasticOut,
-            );
-          }
-          setState(() => _currentIndex = index);
+    _syncChannel.onmessage = (web.MessageEvent event) {
+      final data = event.data.dartify();
+      if (data is Map && data['type'] == 'slide_change') {
+        final index = data['index'] as int;
+        if (index != _currentIndex) {
+          _updateInternalPage(index);
         }
       }
-    }.toJS);
+    }.toJS;
+  }
+
+  void _updateInternalPage(int index) {
+    if (_pageController.hasClients) {
+      _pageController.animateToPage(
+        index,
+        duration: const Duration(milliseconds: 800),
+        curve: Curves.easeOutExpo,
+      );
+    }
+    setState(() => _currentIndex = index);
   }
 
   @override
@@ -231,22 +226,19 @@ class _StageWindowState extends State<StageWindow> {
                         }
                         Future.delayed(const Duration(seconds: 2), () => _logoClicks = 0);
                       },
-                      child: Hero(
-                        tag: 'ebf_logo',
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: kFuchsia.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: kFuchsia.withValues(alpha: 0.2)),
-                          ),
-                          child: Text('EBF × AI',
-                              style: GoogleFonts.spaceGrotesk(
-                                  letterSpacing: 4, 
-                                  fontSize: 20,
-                                  color: kFuchsiaAccent,
-                                  fontWeight: FontWeight.w900)),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: kFuchsia.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: kFuchsiaAccent.withValues(alpha: 0.2)),
                         ),
+                        child: Text('EBF × AI',
+                            style: GoogleFonts.spaceGrotesk(
+                                letterSpacing: 4, 
+                                fontSize: 20,
+                                color: kFuchsiaAccent,
+                                fontWeight: FontWeight.w900)),
                       ),
                     ),
                   ),
@@ -306,14 +298,7 @@ class _StageWindowState extends State<StageWindow> {
   void _step(int delta) {
     final newIndex = _currentIndex + delta;
     if (newIndex >= 0 && newIndex < _slides.length) {
-      if (_pageController.hasClients) {
-        _pageController.animateToPage(
-          newIndex,
-          duration: const Duration(milliseconds: 1000),
-          curve: Curves.elasticOut,
-        );
-      }
-      setState(() => _currentIndex = newIndex);
+      _updateInternalPage(newIndex);
       broadcastSlide(newIndex);
     }
   }
@@ -338,23 +323,24 @@ class _PresenterWindowState extends State<PresenterWindow> {
   void initState() {
     super.initState();
     _listenForSync();
-    final index = getStoredIndex();
-    if (index != null) _currentIndex = index;
+    final stored = web.window.localStorage.getItem('last_index');
+    if (stored != null) _currentIndex = int.tryParse(stored) ?? 0;
   }
 
   void _listenForSync() {
-    web.window.addEventListener('storage', (web.Event event) {
-      final storageEvent = event as web.StorageEvent;
-      if (storageEvent.key == kSyncKey && storageEvent.newValue != null) {
-        final index = getStoredIndex();
-        if (index != null && index != _currentIndex) {
+    _syncChannel.onmessage = (web.MessageEvent event) {
+      final data = event.data.dartify();
+      if (data is Map && data['type'] == 'slide_change') {
+        final index = data['index'] as int;
+        if (index != _currentIndex) {
           setState(() {
             _currentIndex = index;
             _isSynced = true;
           });
+          developer.log('Presenter synced to index $index');
         }
       }
-    }.toJS);
+    }.toJS;
   }
 
   void _goTo(int index) {
@@ -364,7 +350,6 @@ class _PresenterWindowState extends State<PresenterWindow> {
       _isSynced = false;
     });
     broadcastSlide(index);
-    // Visual feedback for sync
     Future.delayed(const Duration(milliseconds: 200), () => setState(() => _isSynced = true));
   }
 
@@ -405,10 +390,10 @@ class _PresenterWindowState extends State<PresenterWindow> {
                     const SizedBox(height: 20),
                     Row(
                       children: [
-                        Icon(Icons.circle, size: 12, color: _isSynced ? Colors.greenAccent : Colors.orangeAccent),
+                        Icon(Icons.link, size: 16, color: _isSynced ? Colors.greenAccent : Colors.orangeAccent),
                         const SizedBox(width: 8),
-                        Text(_isSynced ? 'Projector Synced' : 'Syncing...', 
-                             style: TextStyle(color: _isSynced ? Colors.greenAccent : Colors.orangeAccent, fontSize: 12)),
+                        Text(_isSynced ? 'STAGE LINKED' : 'PUSHING...', 
+                             style: TextStyle(color: _isSynced ? Colors.greenAccent : Colors.orangeAccent, fontSize: 12, fontWeight: FontWeight.bold)),
                       ],
                     ),
                     const Spacer(),
