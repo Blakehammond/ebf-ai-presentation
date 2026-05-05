@@ -51,23 +51,50 @@ class _PresentationRouterState extends State<PresentationRouter> {
   void initState() {
     super.initState();
     _checkMode();
-    // Live listener so adding "#presenter" to the URL works instantly
+    // Aggressive listener for URL changes
     web.window.addEventListener('hashchange', (web.Event event) {
       _checkMode();
     }.toJS);
   }
 
   void _checkMode() {
-    final hash = web.window.location.hash;
-    final isNowPresenter = hash.contains('presenter');
+    final url = web.window.location.href.toLowerCase();
+    // Check for "presenter" anywhere in the URL (hash or query)
+    final isNowPresenter = url.contains('presenter');
     if (isNowPresenter != _isPresenter) {
       setState(() => _isPresenter = isNowPresenter);
     }
   }
 
+  void _toggleMode() {
+    setState(() => _isPresenter = !_isPresenter);
+  }
+
   @override
   Widget build(BuildContext context) {
-    return _isPresenter ? const PresenterWindow() : const StageWindow();
+    return Stack(
+      children: [
+        // Main App
+        _isPresenter 
+            ? PresenterWindow(onExit: _toggleMode) 
+            : StageWindow(onTogglePresenter: _toggleMode),
+            
+        // Invisible Secret Toggle (Bottom Right Corner)
+        Positioned(
+          bottom: 0,
+          right: 0,
+          width: 50,
+          height: 50,
+          child: GestureDetector(
+            onDoubleTap: _toggleMode,
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: Container(color: Colors.transparent),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -76,7 +103,8 @@ const String kSyncKey = 'ebf_slide_index';
 // --- STAGE WINDOW ---
 
 class StageWindow extends StatefulWidget {
-  const StageWindow({super.key});
+  final VoidCallback onTogglePresenter;
+  const StageWindow({super.key, required this.onTogglePresenter});
 
   @override
   State<StageWindow> createState() => _StageWindowState();
@@ -86,6 +114,7 @@ class _StageWindowState extends State<StageWindow> {
   final PageController _pageController = PageController();
   int _currentIndex = 0;
   bool _showControls = false;
+  int _logoClicks = 0;
 
   final List<Widget> _slides = [
     SlideTitle(onNext: () {}),
@@ -171,28 +200,40 @@ class _StageWindowState extends State<StageWindow> {
                     },
                   ),
                   
+                  // Brand Header (Secret Toggle via Triple Click)
                   Positioned(
                     top: 25,
                     left: 40,
-                    child: Hero(
-                      tag: 'ebf_logo',
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: kFuchsia.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: kFuchsia.withValues(alpha: 0.2)),
+                    child: GestureDetector(
+                      onTap: () {
+                        _logoClicks++;
+                        if (_logoClicks >= 3) {
+                          widget.onTogglePresenter();
+                          _logoClicks = 0;
+                        }
+                        Future.delayed(const Duration(seconds: 2), () => _logoClicks = 0);
+                      },
+                      child: Hero(
+                        tag: 'ebf_logo',
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: kFuchsia.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: kFuchsia.withValues(alpha: 0.2)),
+                          ),
+                          child: Text('EBF × AI',
+                              style: GoogleFonts.spaceGrotesk(
+                                  letterSpacing: 4, 
+                                  fontSize: 20,
+                                  color: kFuchsiaAccent,
+                                  fontWeight: FontWeight.w900)),
                         ),
-                        child: Text('EBF × AI',
-                            style: GoogleFonts.spaceGrotesk(
-                                letterSpacing: 4, 
-                                fontSize: 20,
-                                color: kFuchsiaAccent,
-                                fontWeight: FontWeight.w900)),
                       ),
                     ),
                   ),
 
+                  // Floating Navigation Controls
                   AnimatedOpacity(
                     opacity: _showControls ? 1.0 : 0.0,
                     duration: const Duration(milliseconds: 300),
@@ -208,7 +249,7 @@ class _StageWindowState extends State<StageWindow> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                               decoration: BoxDecoration(
-                                color: kFuchsia.withValues(alpha: 0.2),
+                                color: Colors.fuchsia.withValues(alpha: 0.2),
                                 border: Border.all(color: kFuchsiaAccent.withValues(alpha: 0.5)),
                                 borderRadius: BorderRadius.circular(30),
                               ),
@@ -263,7 +304,8 @@ class _StageWindowState extends State<StageWindow> {
 // --- PRESENTER WINDOW ---
 
 class PresenterWindow extends StatefulWidget {
-  const PresenterWindow({super.key});
+  final VoidCallback onExit;
+  const PresenterWindow({super.key, required this.onExit});
 
   @override
   State<PresenterWindow> createState() => _PresenterWindowState();
@@ -311,11 +353,17 @@ class _PresenterWindowState extends State<PresenterWindow> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('PARTY CONTROL 🕴️',
-                        style: GoogleFonts.spaceGrotesk(
-                            color: kFuchsia,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w900)),
+                    Row(
+                      children: [
+                        Text('PARTY CONTROL 🕴️',
+                            style: GoogleFonts.spaceGrotesk(
+                                color: kFuchsia,
+                                fontSize: 20,
+                                fontWeight: FontWeight.w900)),
+                        const Spacer(),
+                        IconButton(onPressed: widget.onExit, icon: const Icon(Icons.close, color: Colors.white38)),
+                      ],
+                    ),
                     const Spacer(),
                     Text('SLIDE', style: TextStyle(color: Colors.white.withValues(alpha: 0.3), letterSpacing: 2)),
                     Text('${_currentIndex + 1} / $_totalSlides',
