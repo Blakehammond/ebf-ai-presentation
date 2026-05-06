@@ -5,8 +5,6 @@ const CACHE_NAME = 'flutter-app-cache';
 
 const RESOURCES = {"assets/AssetManifest.bin": "b9a307b5e520ebad51f6a6c7eac4450a",
 "assets/AssetManifest.bin.json": "65a351945f3a6adb94ad9356072d45f0",
-"assets/assets/c5ac1b08-853c-4155-8b2d-d8db3292e721-lyrics-suno-lyric-downloader.lrc": "7fe984096991dd35e291aa4280cca8fd",
-"assets/assets/Essex%2520Rising.mp3": "3c5cb77c6d0afe7169738ed748f7244c",
 "assets/assets/essex_rising.mp3": "3c5cb77c6d0afe7169738ed748f7244c",
 "assets/assets/lyrics.lrc": "7fe984096991dd35e291aa4280cca8fd",
 "assets/FontManifest.json": "7b2a36307916a9721811788013e65289",
@@ -28,14 +26,14 @@ const RESOURCES = {"assets/AssetManifest.bin": "b9a307b5e520ebad51f6a6c7eac4450a
 "canvaskit/skwasm_heavy.wasm": "b0be7910760d205ea4e011458df6ee01",
 "favicon.png": "5dcef449791fa27946b3d35ad8803796",
 "flutter.js": "24bc71911b75b5f8135c949e27a2984e",
-"flutter_bootstrap.js": "950e3542e6eb5a4ccb25db7b662f55a3",
+"flutter_bootstrap.js": "d9144b53abe42f53ab910e5cdacb5598",
 "icons/Icon-192.png": "ac9a721a12bbc803b44f645561ecb1e1",
 "icons/Icon-512.png": "96e752610906ba2a93c65f8abe1645f1",
 "icons/Icon-maskable-192.png": "c457ef57daa1d16f64b27b786ec2ea3c",
 "icons/Icon-maskable-512.png": "301a7604d45b3e739efc881eb04896ea",
 "index.html": "0831e697758c66927d85ceb85c6931d9",
 "/": "0831e697758c66927d85ceb85c6931d9",
-"main.dart.js": "595a798bff146f0e67053d1508a966f6",
+"main.dart.js": "07c716140435672a1f76c4833aec6033",
 "manifest.json": "209cbfd3ec7174565062047326d7085d",
 "version.json": "3b60691f3a90bc0b7f1ca63833fe24a9"};
 // The application shell files that are downloaded before a service worker can
